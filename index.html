@@ -1,0 +1,443 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Point Pet</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐾</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;700&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="top">
+  <a class="marca" href="#"><span class="icone"><i data-lucide="paw-print"></i></span>Point Pet</a>
+  <button type="button" class="btn btn-primario" id="abrir-cadastro"><i data-lucide="plus"></i>Cadastrar local</button>
+</header>
+
+<main class="app">
+  <aside class="painel" id="painel" data-modo="lista">
+    <div class="cabeca">
+      <h1>Doar, comprar e cuidar, tudo no mapa</h1>
+      <p class="lede">Abrigos, lojas de itens para pet e clínicas veterinárias cadastrados pelas pessoas.</p>
+    </div>
+    <button type="button" class="btn btn-primario btn-bloco localizar" id="localizar"><i data-lucide="locate-fixed"></i>Usar minha localização</button>
+    <p class="status" id="status" role="status"></p>
+    <div class="busca">
+      <i data-lucide="search" class="ico-busca"></i>
+      <input id="busca" type="search" placeholder="Buscar por nome ou endereço" aria-label="Buscar locais">
+    </div>
+    <div class="filtros" role="group" aria-label="Filtrar por tipo">
+      <button type="button" class="chip" data-filtro="todos" aria-pressed="true">Todos</button>
+      <button type="button" class="chip" data-filtro="doacao" aria-pressed="false"><span class="bolinha" style="--cor:#F07A2E"></span>Doação</button>
+      <button type="button" class="chip" data-filtro="loja" aria-pressed="false"><span class="bolinha" style="--cor:#7452B8"></span>Lojas</button>
+      <button type="button" class="chip" data-filtro="clinica" aria-pressed="false"><span class="bolinha" style="--cor:#2F6FB0"></span>Clínicas</button>
+    </div>
+    <span class="contagem" id="contagem"></span>
+    <ul class="lista" id="lista" aria-label="Locais encontrados"></ul>
+
+    <section class="detalhe" id="detalhe" aria-live="polite"></section>
+
+    <section class="cadastro" id="cadastro" aria-labelledby="titulo-cadastro">
+      <button type="button" class="voltar" id="cancelar-cadastro"><i data-lucide="arrow-left"></i>Voltar para a lista</button>
+      <h2 id="titulo-cadastro">Cadastrar um local</h2>
+      <p class="lede">Preencha os dados e toque no mapa onde fica o local. Só você poderá excluir este cadastro, pelo mesmo navegador.</p>
+      <form id="form">
+        <label><span>Nome do local</span><input type="text" name="nome" required maxlength="120"></label>
+        <fieldset>
+          <legend>Tipo</legend>
+          <div class="filtros">
+            <label class="chip"><input type="radio" name="tipo" value="doacao" checked>Doação</label>
+            <label class="chip"><input type="radio" name="tipo" value="loja">Loja</label>
+            <label class="chip"><input type="radio" name="tipo" value="clinica">Clínica</label>
+          </div>
+        </fieldset>
+        <label><span>Endereço</span><input type="text" name="endereco" required maxlength="200"></label>
+        <label><span>Telefone</span><input type="tel" name="telefone" maxlength="30"></label>
+        <label><span>Horário de funcionamento</span><input type="text" name="horario" maxlength="120" placeholder="Ex.: Seg a sex 8h–18h"></label>
+        <div class="marcacao">
+          <button type="button" class="btn" id="marcar"><i data-lucide="map-pin"></i>Marcar no mapa</button>
+          <span id="marcacao-texto">Nenhum ponto marcado</span>
+        </div>
+        <p class="status" id="form-aviso" role="status"></p>
+        <div class="acoes">
+          <button type="submit" class="btn btn-primario" id="salvar" disabled>Salvar cadastro</button>
+        </div>
+      </form>
+    </section>
+  </aside>
+  <div id="mapa" role="region" aria-label="Mapa de locais"></div>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/lucide@0.383.0/dist/umd/lucide.min.js"></script>
+<script>
+const CATEGORIAS = {
+  doacao:  { nome: 'Doação',  cor: '#F07A2E', icone: 'heart-handshake', rotulo: 'Precisa de' },
+  loja:    { nome: 'Loja',    cor: '#7452B8', icone: 'shopping-bag' },
+  clinica: { nome: 'Clínica', cor: '#2F6FB0', icone: 'stethoscope' }
+};
+
+// Locais são guardados neste navegador (localStorage). Cada navegador recebe um identificador,
+// e só ele pode excluir os cadastros que criou.
+const CHAVE_LOCAIS = 'pointpet.locais.v1';
+const CHAVE_DONO = 'pointpet.meuId';
+const RAIO_TERRA = 6371000;
+
+const $ = s => document.querySelector(s);
+const painel = $('#painel'), lista = $('#lista'), detalhe = $('#detalhe'), busca = $('#busca');
+const contagem = $('#contagem'), statusEl = $('#status'), form = $('#form'), formAviso = $('#form-aviso');
+const marcacaoTexto = $('#marcacao-texto'), salvarBtn = $('#salvar');
+
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+function lerLocais() {
+  try { return JSON.parse(localStorage.getItem(CHAVE_LOCAIS)) || []; } catch (e) { return []; }
+}
+function gravarLocais() {
+  try { localStorage.setItem(CHAVE_LOCAIS, JSON.stringify(usuarios)); return true; } catch (e) { return false; }
+}
+function obterMeuId() {
+  try {
+    let id = localStorage.getItem(CHAVE_DONO);
+    if (!id) {
+      id = crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2);
+      localStorage.setItem(CHAVE_DONO, id);
+    }
+    return id;
+  } catch (e) { return null; }
+}
+
+const meuId = obterMeuId();
+let usuarios = lerLocais();
+const estado = { filtro: 'todos', termo: '', ativo: null, origem: null, rota: null, modo: 'lista', marcando: false, novoPonto: null };
+
+// Mapa: OpenStreetMap (tiles) e rotas pelo serviço OSRM. Ambos são públicos e não exigem chave.
+const mapa = L.map('mapa').setView([-14.2, -51.9], 4);
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 19,
+  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+}).addTo(mapa);
+
+const camadaPinos = L.layerGroup().addTo(mapa);
+const camadaRota = L.layerGroup().addTo(mapa);
+const camadaNovo = L.layerGroup().addTo(mapa);
+let marcadorEu = null;
+let marcadores = {};
+
+function recriarMarcadores() {
+  marcadores = {};
+  usuarios.forEach(p => {
+    marcadores[p.id] = L.marker([p.lat, p.lng], { title: p.nome, alt: p.nome }).on('click', () => selecionar(p.id));
+  });
+}
+
+function ajustarMapa() {
+  if (usuarios.length) mapa.fitBounds(L.latLngBounds(usuarios.map(p => [p.lat, p.lng])), { padding: [40, 40] });
+}
+
+function iconePino(p, ativo) {
+  return L.divIcon({
+    className: '',
+    html: `<span class="pino${ativo ? ' ativo' : ''}" style="--cor:${CATEGORIAS[p.cat].cor}"><i data-lucide="${CATEGORIAS[p.cat].icone}"></i></span>`,
+    iconSize: [36, 36],
+    iconAnchor: [18, 18]
+  });
+}
+
+function distanciaMetros(a, b) {
+  const rad = Math.PI / 180;
+  const dLat = (b.lat - a.lat) * rad, dLng = (b.lng - a.lng) * rad;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * rad) * Math.cos(b.lat * rad) * Math.sin(dLng / 2) ** 2;
+  return 2 * RAIO_TERRA * Math.asin(Math.sqrt(h));
+}
+
+const distancia = p => estado.origem ? distanciaMetros(estado.origem, p) : null;
+const formatarDistancia = m => m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(1).replace('.', ',')} km`;
+const formatarData = iso => new Date(iso).toLocaleDateString('pt-BR');
+
+function filtrados() {
+  const t = estado.termo.trim().toLowerCase();
+  const itens = usuarios.filter(p =>
+    (estado.filtro === 'todos' || p.cat === estado.filtro) &&
+    `${p.nome} ${p.tipo} ${p.endereco}`.toLowerCase().includes(t));
+  if (estado.origem) itens.sort((a, b) => distancia(a) - distancia(b));
+  return itens;
+}
+
+function desenharMapa(itens) {
+  camadaPinos.clearLayers();
+  itens.forEach(p => {
+    if (marcadores[p.id]) marcadores[p.id].setIcon(iconePino(p, p.id === estado.ativo)).addTo(camadaPinos);
+  });
+  if (window.lucide) lucide.createIcons();
+}
+
+function desenhar() {
+  const itens = filtrados();
+  lista.innerHTML = itens.length ? itens.map(p => {
+    const d = distancia(p);
+    return `<li><button type="button" class="item" data-id="${esc(p.id)}" style="--cor:${CATEGORIAS[p.cat].cor}">
+      <span class="selo"><i data-lucide="${CATEGORIAS[p.cat].icone}"></i></span>
+      <span><strong>${esc(p.nome)}</strong><small>${esc(p.tipo)} · ${esc(p.endereco)}</small></span>
+      ${d === null ? '' : `<span class="dist">${formatarDistancia(d)}</span>`}
+    </button></li>`;
+  }).join('') : `<li class="vazio">${usuarios.length ? 'Nenhum local encontrado. Tente outro termo ou troque o filtro.' : 'Ainda não há locais cadastrados. Use “Cadastrar local” para adicionar o primeiro.'}</li>`;
+  contagem.textContent = itens.length === 1 ? '1 local' : `${itens.length} locais`;
+  if (!itens.some(p => p.id === estado.ativo) && estado.modo === 'detalhe') {
+    limparRota();
+    estado.ativo = null;
+    estado.modo = 'lista';
+  }
+  desenharMapa(itens);
+  sincronizarSelecao();
+}
+
+function sincronizarSelecao() {
+  document.querySelectorAll('.item').forEach(b =>
+    b.setAttribute('aria-current', String(b.dataset.id === estado.ativo)));
+  painel.dataset.modo = estado.modo;
+  renderDetalhe();
+  if (window.lucide) lucide.createIcons();
+}
+
+function renderDetalhe() {
+  const p = usuarios.find(x => x.id === estado.ativo);
+  if (estado.modo !== 'detalhe' || !p) { detalhe.innerHTML = ''; return; }
+  const c = CATEGORIAS[p.cat], d = distancia(p), meu = meuId && p.dono === meuId;
+  const telefone = p.telefone ? esc(p.telefone) : 'Não informado';
+  detalhe.innerHTML = `
+    <button type="button" class="voltar" id="voltar"><i data-lucide="arrow-left"></i>Voltar para a lista</button>
+    <div class="foto"><i data-lucide="image-off"></i><span>Sem foto cadastrada</span></div>
+    <span class="tag" style="--cor:${c.cor}">${esc(p.tipo)}</span>
+    <h2>${esc(p.nome)}</h2>
+    <p class="fonte">Cadastrado ${meu ? 'por você' : 'por outro usuário'} em ${formatarData(p.criadoEm)}.</p>
+    <dl>
+      ${d === null ? '' : `<dt>Distância</dt><dd>${formatarDistancia(d)} em linha reta</dd>`}
+      <dt>Endereço</dt><dd>${esc(p.endereco)}</dd>
+      <dt>Horário</dt><dd>${esc(p.horario)}</dd>
+      <dt>Telefone</dt><dd>${telefone}</dd>
+    </dl>
+    ${estado.rota ? `<div class="rota-info">${estado.rota}</div>` : ''}
+    <div class="acoes">
+      <button type="button" class="btn btn-primario" id="chegar"><i data-lucide="route"></i>Como chegar</button>
+      ${p.telefone ? `<a class="btn" href="tel:${esc(p.telefone.replace(/\D/g, ''))}"><i data-lucide="phone"></i>Ligar</a>` : ''}
+      ${meu ? `<button type="button" class="btn btn-perigo" id="excluir"><i data-lucide="trash-2"></i>Excluir meu cadastro</button>` : ''}
+    </div>`;
+}
+
+function limparRota() {
+  camadaRota.clearLayers();
+  estado.rota = null;
+}
+
+function selecionar(id) {
+  if (estado.marcando) return;
+  if (id !== estado.ativo) limparRota();
+  estado.ativo = id;
+  estado.modo = 'detalhe';
+  camadaNovo.clearLayers();
+  sincronizarSelecao();
+  desenharMapa(filtrados());
+  const p = usuarios.find(x => x.id === id);
+  if (p) mapa.panTo([p.lat, p.lng]);
+  painel.scrollTop = 0;
+}
+
+function voltarLista() {
+  limparRota();
+  estado.ativo = null;
+  estado.modo = 'lista';
+  sincronizarSelecao();
+  desenharMapa(filtrados());
+  ajustarMapa();
+}
+
+async function calcularRota(p) {
+  const alvo = p.id;
+  if (!estado.origem) {
+    estado.rota = '<p>Ative sua localização para calcular a rota.</p>';
+    renderDetalhe();
+    return;
+  }
+  estado.rota = '<p>Calculando rota…</p>';
+  renderDetalhe();
+  const o = estado.origem;
+  const url = `https://router.project-osrm.org/route/v1/driving/${o.lng},${o.lat};${p.lng},${p.lat}?overview=full&geometries=geojson`;
+  let html;
+  try {
+    const dados = await (await fetch(url)).json();
+    if (dados.code !== 'Ok' || !dados.routes.length) throw new Error('sem rota');
+    if (estado.ativo !== alvo) return;
+    const r = dados.routes[0];
+    camadaRota.clearLayers();
+    L.geoJSON(r.geometry, { style: { color: '#1E6FD9', weight: 5 } }).addTo(camadaRota);
+    mapa.fitBounds(L.latLngBounds([[o.lat, o.lng], [p.lat, p.lng]]), { padding: [40, 40] });
+    html = `<p><strong>${formatarDistancia(r.distance)}</strong> de carro · cerca de ${Math.max(1, Math.round(r.duration / 60))} min</p>
+      <p class="fonte">Rota do serviço OSRM sobre o mapa do OpenStreetMap. O tempo não considera trânsito.</p>`;
+  } catch (err) {
+    html = '<p>Não foi possível calcular a rota agora. Verifique sua conexão e tente de novo.</p>';
+  }
+  if (estado.ativo !== alvo) return;
+  estado.rota = html;
+  renderDetalhe();
+  if (window.lucide) lucide.createIcons();
+}
+
+function excluirLocal(id) {
+  const p = usuarios.find(x => x.id === id);
+  if (!p || p.dono !== meuId) return;
+  if (!confirm(`Excluir o cadastro de “${p.nome}”? Essa ação não pode ser desfeita.`)) return;
+  const anteriores = usuarios;
+  usuarios = usuarios.filter(x => x.id !== id);
+  if (!gravarLocais()) {
+    usuarios = anteriores;
+    mostrarStatus('Não foi possível excluir agora. O armazenamento do navegador está bloqueado.');
+    return;
+  }
+  recriarMarcadores();
+  limparRota();
+  estado.ativo = null;
+  estado.modo = 'lista';
+  desenhar();
+  mostrarStatus('Cadastro excluído.');
+}
+
+function abrirCadastro() {
+  limparRota();
+  estado.ativo = null;
+  estado.modo = 'cadastro';
+  estado.marcando = false;
+  estado.novoPonto = null;
+  camadaNovo.clearLayers();
+  form.reset();
+  formAviso.textContent = '';
+  atualizarFormulario();
+  sincronizarSelecao();
+  desenharMapa(filtrados());
+  painel.scrollTop = 0;
+}
+
+function fecharCadastro() {
+  estado.marcando = false;
+  estado.novoPonto = null;
+  camadaNovo.clearLayers();
+  mapa.getContainer().classList.remove('marcando');
+  estado.modo = 'lista';
+  sincronizarSelecao();
+}
+
+function atualizarFormulario() {
+  if (estado.novoPonto) marcacaoTexto.textContent = 'Ponto marcado no mapa';
+  else if (estado.marcando) marcacaoTexto.textContent = 'Toque no mapa onde fica o local';
+  else marcacaoTexto.textContent = 'Nenhum ponto marcado';
+  salvarBtn.disabled = !estado.novoPonto;
+}
+
+mapa.on('click', e => {
+  if (!estado.marcando) return;
+  estado.marcando = false;
+  estado.novoPonto = { lat: e.latlng.lat, lng: e.latlng.lng };
+  mapa.getContainer().classList.remove('marcando');
+  camadaNovo.clearLayers();
+  L.circleMarker([estado.novoPonto.lat, estado.novoPonto.lng], { radius: 9, color: '#2B1D14', weight: 3, fillColor: '#FFFFFF', fillOpacity: 1 }).addTo(camadaNovo);
+  atualizarFormulario();
+});
+
+$('#marcar').addEventListener('click', () => {
+  estado.marcando = true;
+  mapa.getContainer().classList.add('marcando');
+  formAviso.textContent = '';
+  atualizarFormulario();
+});
+
+form.addEventListener('submit', e => {
+  e.preventDefault();
+  if (!estado.novoPonto) return;
+  const dados = new FormData(form);
+  const cat = dados.get('tipo') || 'doacao';
+  const novo = {
+    id: 'l' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+    cat,
+    nome: String(dados.get('nome') || '').trim(),
+    tipo: CATEGORIAS[cat].nome,
+    endereco: String(dados.get('endereco') || '').trim(),
+    telefone: String(dados.get('telefone') || '').trim(),
+    horario: String(dados.get('horario') || '').trim() || 'Não informado',
+    lat: estado.novoPonto.lat,
+    lng: estado.novoPonto.lng,
+    dono: meuId,
+    criadoEm: new Date().toISOString()
+  };
+  usuarios.push(novo);
+  if (!gravarLocais()) {
+    usuarios.pop();
+    formAviso.textContent = 'Não foi possível salvar neste navegador, porque o armazenamento está bloqueado.';
+    return;
+  }
+  recriarMarcadores();
+  fecharCadastro();
+  desenhar();
+  mapa.setView([novo.lat, novo.lng], Math.max(mapa.getZoom(), 15));
+  mostrarStatus('Cadastro salvo. Você pode excluí-lo pela própria lista, neste navegador.');
+});
+
+$('#cancelar-cadastro').addEventListener('click', fecharCadastro);
+$('#abrir-cadastro').addEventListener('click', abrirCadastro);
+
+detalhe.addEventListener('click', e => {
+  if (e.target.closest('#voltar')) { voltarLista(); return; }
+  if (e.target.closest('#chegar')) { calcularRota(usuarios.find(x => x.id === estado.ativo)); return; }
+  if (e.target.closest('#excluir')) excluirLocal(estado.ativo);
+});
+
+lista.addEventListener('click', e => {
+  const b = e.target.closest('.item');
+  if (b) selecionar(b.dataset.id);
+});
+
+document.querySelectorAll('[data-filtro]').forEach(b => b.addEventListener('click', () => {
+  estado.filtro = b.dataset.filtro;
+  document.querySelectorAll('[data-filtro]').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+  desenhar();
+}));
+
+busca.addEventListener('input', () => { estado.termo = busca.value; desenhar(); });
+
+function mostrarStatus(texto) { statusEl.textContent = texto; }
+
+function localizar() {
+  if (!navigator.geolocation) {
+    mostrarStatus('Seu navegador não oferece localização. Os locais estão sem distância.');
+    return;
+  }
+  mostrarStatus('Procurando sua localização…');
+  navigator.geolocation.getCurrentPosition(pos => {
+    const { latitude: lat, longitude: lng, accuracy } = pos.coords;
+    estado.origem = { lat, lng };
+    if (marcadorEu) marcadorEu.remove();
+    marcadorEu = L.circleMarker([lat, lng], { radius: 8, color: '#fff', weight: 3, fillColor: '#1E6FD9', fillOpacity: 1 }).addTo(mapa);
+    mapa.setView([lat, lng], 14);
+    mostrarStatus(`Localização encontrada, com precisão de cerca de ${Math.round(accuracy)} m.`);
+    desenhar();
+  }, err => {
+    const mensagens = {
+      1: 'Permissão negada. Libere o acesso à localização nas configurações do navegador.',
+      2: 'Não foi possível determinar sua posição agora.',
+      3: 'A busca pela localização demorou demais. Tente de novo.'
+    };
+    mostrarStatus(mensagens[err.code] || 'Não foi possível obter sua localização.');
+  }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 });
+}
+
+document.querySelectorAll('.localizar').forEach(b => b.addEventListener('click', localizar));
+
+recriarMarcadores();
+ajustarMapa();
+desenhar();
+if (window.lucide) lucide.createIcons();
+</script>
+</body>
+</html>

@@ -1,0 +1,78 @@
+:root{--papel:#FFF7F0;--superficie:#FFFFFF;--tinta:#2B1D14;--tinta-2:#7A5C4B;--linha:#F0D9C4;--verde:#B9470C;--eu:#1E6FD9;
+  font-family:Figtree,system-ui,sans-serif;color:var(--tinta);background:var(--papel)}
+*{box-sizing:border-box}
+body{margin:0;line-height:1.5}
+h1,h2{font-family:"Bricolage Grotesque",Figtree,sans-serif;margin:0;line-height:1.1}
+:focus-visible{outline:3px solid var(--eu);outline-offset:2px}
+button,input{font:inherit}
+.top{display:flex;align-items:center;padding:12px 24px;border-bottom:1px solid var(--linha);background:var(--papel)}
+.marca{display:flex;align-items:center;gap:10px;font:700 1.25rem "Bricolage Grotesque",sans-serif;color:var(--tinta);text-decoration:none}
+.marca .icone{width:34px;height:34px;border-radius:10px;background:var(--verde);color:#fff;display:grid;place-items:center}
+.app{display:grid;grid-template-columns:minmax(300px,380px) 1fr;height:calc(100vh - 62px);min-height:560px}
+.painel{display:flex;flex-direction:column;gap:16px;padding:28px 24px;overflow-y:auto;border-right:1px solid var(--linha)}
+.painel h1{font-size:2rem;font-weight:700}
+.lede{margin:8px 0 0;color:var(--tinta-2)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:10px 18px;border:1.5px solid var(--linha);border-radius:999px;font-weight:600;cursor:pointer;text-decoration:none;color:var(--tinta);background:var(--superficie)}
+.btn-primario{background:var(--verde);color:#fff;border-color:var(--verde)}
+.btn-bloco{width:100%}
+.status{margin:0;font-size:14px;color:var(--tinta-2)}
+.busca{position:relative}
+.busca input{width:100%;min-height:48px;padding:0 14px 0 44px;border:1.5px solid var(--linha);border-radius:12px;background:var(--superficie);color:var(--tinta);font-size:16px}
+.busca .ico-busca{position:absolute;left:14px;top:50%;translate:0 -50%;color:var(--tinta-2);pointer-events:none}
+.filtros{display:flex;flex-wrap:wrap;gap:8px}
+.chip{display:inline-flex;align-items:center;gap:8px;min-height:40px;padding:8px 14px;border:1.5px solid var(--linha);border-radius:999px;background:var(--superficie);color:var(--tinta);font-weight:600;font-size:14px;cursor:pointer}
+.chip[aria-pressed="true"]{background:var(--tinta);border-color:var(--tinta);color:#fff}
+.bolinha{width:10px;height:10px;border-radius:50%;background:var(--cor)}
+.contagem{font-size:14px;color:var(--tinta-2)}
+.lista{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px}
+.item{width:100%;display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;padding:12px;border:0;border-radius:12px;background:none;text-align:left;cursor:pointer;color:inherit}
+.item:hover{background:#FCEBDD}
+.item[aria-current="true"]{background:var(--superficie);box-shadow:inset 3px 0 0 var(--cor)}
+.item strong{display:block;font-weight:600}
+.item small{color:var(--tinta-2)}
+.dist{font-size:14px;font-weight:600;color:var(--tinta-2);white-space:nowrap}
+.selo{width:36px;height:36px;border-radius:10px;background:var(--cor);color:#fff;display:grid;place-items:center}
+.vazio{padding:12px;color:var(--tinta-2)}
+.detalhe{border-top:1px solid var(--linha);padding-top:18px}
+.voltar{align-self:flex-start;display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:8px 0;border:0;background:none;color:var(--verde);font-weight:600;cursor:pointer}
+.foto{display:grid;place-items:center;align-content:center;gap:6px;height:140px;border-radius:14px;background:#F6E6D8;color:var(--tinta-2);font-size:14px;margin-bottom:12px}
+.tag{display:inline-block;margin-bottom:10px;padding:4px 10px;border-radius:999px;background:var(--cor);color:#fff;font-size:13px;font-weight:600}
+.detalhe h2{font-size:1.4rem;font-weight:700;margin-bottom:6px}
+.detalhe p{margin:0 0 12px}
+.avaliacao{display:flex;align-items:center;gap:6px;font-weight:600}
+.avaliacao svg{width:16px;height:16px;color:var(--verde);fill:var(--verde)}
+.detalhe dl{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;margin:0 0 16px}
+.detalhe dt{color:var(--tinta-2)}
+.detalhe dd{margin:0}
+.acoes{display:flex;gap:10px;flex-wrap:wrap}
+.rota-info{margin:0 0 12px;padding:12px 14px;border-radius:12px;background:#F6E6D8}
+.rota-info p{margin:0 0 4px}
+.fonte{font-size:12px;color:var(--tinta-2);margin:12px 0 0}
+#mapa{height:100%;min-height:360px;background:#FBE3CE}
+.pino{display:grid;place-items:center;width:36px;height:36px;border-radius:50%;background:var(--cor);color:#fff;border:3px solid #fff;box-shadow:0 2px 6px rgb(0 0 0/.25)}
+.pino.ativo{outline:3px solid var(--tinta)}
+.pino svg{width:16px;height:16px}
+@media (max-width:860px){
+  .app{grid-template-columns:1fr;height:auto;min-height:0}
+  #mapa{order:-1;height:55vh;min-height:320px}
+  .painel{border-right:0;border-top:1px solid var(--linha);overflow:visible}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+
+.painel[data-modo="lista"] .detalhe,.painel[data-modo="lista"] .cadastro,.painel[data-modo="detalhe"] .cadastro,.painel[data-modo="cadastro"] .detalhe{display:none}
+.painel[data-modo="detalhe"] > :not(.detalhe),.painel[data-modo="cadastro"] > :not(.cadastro){display:none}
+.painel[data-modo="detalhe"] .detalhe,.painel[data-modo="cadastro"] .cadastro{border-top:0;padding-top:0}
+.cadastro form{display:grid;gap:14px;margin-top:8px}
+.cadastro label span,.cadastro legend{display:block;margin-bottom:6px;font-weight:600;font-size:14px}
+.cadastro legend{padding:0}
+.cadastro fieldset{border:0;margin:0;padding:0}
+.cadastro input[type=text],.cadastro input[type=tel]{width:100%;min-height:44px;padding:10px 12px;border:1.5px solid var(--linha);border-radius:10px;font-size:16px;background:var(--superficie);color:var(--tinta)}
+.cadastro .chip{position:relative}
+.cadastro .chip input{position:absolute;opacity:0;pointer-events:none}
+.cadastro .chip:has(input:checked){background:var(--tinta);border-color:var(--tinta);color:#fff}
+.cadastro .chip:focus-within{outline:3px solid var(--eu);outline-offset:2px}
+.marcacao{display:flex;align-items:center;gap:12px;flex-wrap:wrap;font-size:14px;color:var(--tinta-2)}
+#mapa.marcando{cursor:crosshair}
+.btn-perigo{background:var(--superficie);color:#A3271B;border-color:#E9B3AB}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.detalhe .acoes{margin-top:4px}
