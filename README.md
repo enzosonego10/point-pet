@@ -1,67 +1,59 @@
 # Point Pet
 
-Mapa colaborativo de locais para pets: abrigos e pontos de doação, lojas de itens para pet e clínicas veterinárias. Qualquer pessoa pode cadastrar um local marcando-o no mapa. Quem cadastrou pode excluir o próprio cadastro. O site também mostra a rota de carro até o local, sem sair da página.
+Mapa colaborativo de locais para pets: abrigos e pontos de doação, lojas de itens para pet e clínicas veterinárias. Qualquer pessoa vê os locais aprovados. Para cadastrar ou excluir um local, a pessoa entra na conta (e-mail e senha, Google ou telefone). Cada um só exclui os próprios cadastros. O site também mostra a rota de carro até o local.
 
 ## Arquivos
 
-- `index.html`: estrutura e lógica do site (mapa, lista, busca, filtros, cadastro, exclusão e rotas).
-- `styles.css`: aparência (cores, tipografia, layout e versão para celular).
+- `index.html`: estrutura, mapa, lista, cadastro, login e rotas.
+- `styles.css`: aparência e versão para celular.
+- `supabase/schema.sql`: tabela de locais e regras de acesso do banco.
 - `README.md`: este arquivo.
 
-Não há o que instalar. As bibliotecas são carregadas pela internet:
+## 1. Criar o banco e as contas (Supabase, gratuito)
 
-- Leaflet 1.9.4 (mapa)
-- Lucide 0.383.0 (ícones)
-- Fontes Bricolage Grotesque e Figtree (Google Fonts)
+1. Crie um projeto em [supabase.com](https://supabase.com).
+2. Em **SQL Editor**, cole o conteúdo de `supabase/schema.sql` e execute.
+3. Em **Project Settings > API**, copie a **Project URL** e a chave **anon public**. Cole as duas no início do script de `index.html`, nas constantes `SUPABASE_URL` e `SUPABASE_ANON_KEY`. A chave anon pode ficar pública. A segurança está nas regras do banco.
+4. Em **Authentication > URL Configuration**, adicione o endereço do site (ex.: `https://pontpet.com.br`) e `http://localhost:8000` nas **Redirect URLs**.
 
-## Como abrir
+### Login por e-mail e senha
 
-Extraia o zip numa pasta `point-pet` e, dentro dela, rode um servidor local simples. A localização do navegador só funciona em `http://localhost` ou em `https`:
+Já vem ativo. Em **Authentication > Providers > Email**, escolha se o e-mail precisa de confirmação.
 
-```bash
-cd point-pet
-python3 -m http.server 8000
-```
+### Login com Google
 
-Depois abra `http://localhost:8000` no navegador.
+1. No Google Cloud Console, crie um **ID do cliente OAuth** do tipo *Aplicativo da Web*.
+2. Em *URIs de redirecionamento autorizados*, adicione `https://SEU-PROJETO.supabase.co/auth/v1/callback`.
+3. No Supabase, em **Authentication > Providers > Google**, ative o provedor e cole o Client ID e o Client Secret.
 
-## Como publicar
+### Login por telefone (SMS)
 
-Envie os arquivos para qualquer hospedagem de site estático (GitHub Pages, Netlify, Vercel, Cloudflare Pages ou uma hospedagem comum). Não é preciso servidor de aplicação.
+Em **Authentication > Providers > Phone**, ative o provedor e escolha um serviço de SMS, como o Twilio. Você informa a conta e o token desse serviço no Supabase. O envio de SMS é cobrado pelo provedor escolhido.
 
-## Como funciona o cadastro
+## 2. Aprovação dos locais
 
-1. Toque em **Cadastrar local** no topo.
-2. Preencha nome, tipo, endereço e, se quiser, telefone e horário.
-3. Toque em **Marcar no mapa** e, em seguida, no ponto exato do local.
-4. Toque em **Salvar cadastro**.
+Cadastros novos entram como **pendentes**. O dono já vê o próprio cadastro, mas o público só vê depois de aprovado. Para aprovar, abra **Table Editor > locations** e mude `status` para `approved`.
 
-Para excluir, abra o local na lista ou no mapa e toque em **Excluir meu cadastro**. O botão só aparece para quem criou o cadastro e pede confirmação antes de apagar.
+Se preferir publicar na hora, troque `'pending'` por `'approved'` no `default` da coluna `status` e na regra "criar próprio como pendente" do `schema.sql`.
 
-## Onde os dados ficam
+## 3. Como publicar
 
-**Os cadastros são salvos no próprio navegador** (`localStorage`). Isso significa:
+O site continua estático. Envie os arquivos para GitHub Pages, Netlify, Vercel, Cloudflare Pages ou outra hospedagem comum. Não é preciso servidor de aplicação.
 
-- Um cadastro aparece apenas no navegador onde foi feito. Outras pessoas não o veem.
-- Cada navegador recebe um identificador próprio. Só ele consegue excluir os cadastros que criou.
-- Se o usuário limpar os dados do navegador, perde a lista de cadastros e a capacidade de excluí-los.
-
-Para um mapa realmente compartilhado, é preciso um banco de dados com contas de usuário. Por exemplo, Supabase, Firebase ou um backend próprio. Nesse caso, a exclusão passaria a ser validada no servidor, e não no navegador.
+Para testar localmente, rode `python3 -m http.server 8000` dentro da pasta e abra `http://localhost:8000`. A localização do navegador só funciona em `localhost` ou em `https`.
 
 ## Serviços externos
 
-- **Mapa:** tiles do OpenStreetMap (`tile.openstreetmap.org`). A atribuição já aparece no mapa, como exige a licença.
-- **Rotas:** servidor público de demonstração do OSRM (`router.project-osrm.org`). É gratuito e não exige chave, mas não deve receber muito tráfego. Para produção, hospede o seu próprio OSRM ou contrate um provedor de rotas, e troque a URL na função `calcularRota` dentro de `index.html`.
-- **Rotas disponíveis:** apenas de carro. O servidor público não oferece trajeto a pé.
+- **Mapa:** tiles do OpenStreetMap. A atribuição já aparece no mapa, como exige a licença.
+- **Rotas:** servidor público de demonstração do OSRM. Não deve receber muito tráfego. Para produção, hospede o seu próprio OSRM ou contrate um provedor e troque a URL na função `calcularRota`.
+- **Rotas disponíveis:** apenas de carro. Não considera trânsito.
 
 ## Limitações conhecidas
 
-- **Cadastros locais.** Veja a seção acima. Esta versão não é compartilhada entre usuários.
-- **Sem fotos.** O formulário não tem envio de imagem.
-- **Sem edição.** Depois de salvo, o cadastro só pode ser excluído e recriado.
-- **Sem moderação.** Qualquer pessoa pode cadastrar qualquer coisa. Em um site público, seria preciso revisar os cadastros antes de exibi-los.
-- **Tempo de carro estimado pelo servidor de rotas.** Não considera trânsito.
+- **Sem fotos** e **sem edição**. Depois de salvo, o cadastro só pode ser excluído e recriado.
+- **Sem painel de moderação.** A aprovação é feita no Table Editor do Supabase.
+- **Cadastros antigos** feitos no navegador (versão anterior) não são migrados automaticamente.
 
 ## Licença e créditos
 
-Mapa © colaboradores do OpenStreetMap. Ícones: Lucide (ISC). Fontes: Google Fonts (SIL OFL).
+Mapa © colaboradores do OpenStreetMap. Ícones: Lucide (ISC). Fontes: Google Fonts (SIL OFL). Banco e contas: Supabase.

@@ -76,3 +76,17 @@ button,input{font:inherit}
 .btn-perigo{background:var(--superficie);color:#A3271B;border-color:#E9B3AB}
 .btn:disabled{opacity:.5;cursor:not-allowed}
 .detalhe .acoes{margin-top:4px}
+
+[hidden]{display:none!important}
+#entrar-sair{margin-left:auto}
+dialog{border:0;border-radius:18px;padding:0;width:min(440px,calc(100% - 32px));max-height:calc(100vh - 32px);background:var(--superficie);color:var(--tinta)}
+dialog::backdrop{background:rgb(43 29 20/.45)}
+.conta{padding:24px;display:grid;gap:14px}
+.conta h2{font-size:1.5rem;font-weight:700}
+.conta form{display:grid;gap:12px}
+.conta label span{display:block;margin-bottom:6px;font-weight:600;font-size:14px}
+.conta input{width:100%;min-height:44px;padding:10px 12px;border:1.5px solid var(--linha);border-radius:10px;font-size:16px;background:var(--superficie);color:var(--tinta)}
+.conta .acoes{display:flex;gap:10px;flex-wrap:wrap}
+.separador{display:flex;align-items:center;gap:10px;color:var(--tinta-2);font-size:14px}
+.separador::before,.separador::after{content:"";flex:1;height:1px;background:var(--linha)}
+

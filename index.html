@@ -14,6 +14,7 @@
 <body>
 <header class="top">
   <a class="marca" href="#"><span class="icone"><i data-lucide="paw-print"></i></span>Point Pet</a>
+  <button type="button" class="btn" id="entrar-sair"><i data-lucide="log-in"></i><span>Entrar</span></button>
   <button type="button" class="btn btn-primario" id="abrir-cadastro"><i data-lucide="plus"></i>Cadastrar local</button>
 </header>
 
@@ -43,7 +44,7 @@
     <section class="cadastro" id="cadastro" aria-labelledby="titulo-cadastro">
       <button type="button" class="voltar" id="cancelar-cadastro"><i data-lucide="arrow-left"></i>Voltar para a lista</button>
       <h2 id="titulo-cadastro">Cadastrar um local</h2>
-      <p class="lede">Preencha os dados e toque no mapa onde fica o local. Só você poderá excluir este cadastro, pelo mesmo navegador.</p>
+      <p class="lede">Preencha os dados e toque no mapa onde fica o local. Só você poderá excluir este cadastro, pela sua conta.</p>
       <form id="form">
         <label><span>Nome do local</span><input type="text" name="nome" required maxlength="120"></label>
         <fieldset>
@@ -70,7 +71,38 @@
   </aside>
   <div id="mapa" role="region" aria-label="Mapa de locais"></div>
 </main>
+<dialog id="dialogo-conta" aria-labelledby="titulo-conta">
+  <div class="conta">
+    <button type="button" class="voltar" id="fechar-conta"><i data-lucide="x"></i>Fechar</button>
+    <h2 id="titulo-conta">Entrar na sua conta</h2>
+    <p class="lede">Para cadastrar e excluir locais, entre pelo e-mail, pelo Google ou pelo telefone.</p>
 
+    <form id="form-senha">
+      <label><span>E-mail</span><input type="email" name="email" required autocomplete="email"></label>
+      <label><span>Senha (mínimo de 8 caracteres)</span><input type="password" name="senha" required minlength="8" autocomplete="current-password"></label>
+      <label><span>Seu nome (só para criar conta)</span><input type="text" name="nome" maxlength="120" autocomplete="name"></label>
+      <div class="acoes">
+        <button type="submit" class="btn btn-primario">Entrar</button>
+        <button type="button" class="btn" data-acao="criar">Criar conta</button>
+      </div>
+    </form>
+
+    <div class="separador">ou</div>
+    <button type="button" class="btn btn-bloco" id="entrar-google"><i data-lucide="log-in"></i>Continuar com Google</button>
+
+    <div class="separador">ou</div>
+    <form id="form-telefone">
+      <label><span>Telefone com DDD</span><input type="tel" name="telefone" required placeholder="(14) 99999-9999" autocomplete="tel"></label>
+      <button type="button" class="btn btn-bloco" id="enviar-codigo"><i data-lucide="smartphone"></i>Enviar código por SMS</button>
+      <label id="campo-codigo" hidden><span>Código de 6 dígitos</span><input type="text" name="codigo" inputmode="numeric" maxlength="6" autocomplete="one-time-code"></label>
+      <button type="submit" class="btn btn-primario btn-bloco" id="confirmar-codigo" hidden>Confirmar código</button>
+    </form>
+    <p class="status" id="conta-aviso" role="status"></p>
+  </div>
+</dialog>
+
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/lucide@0.383.0/dist/umd/lucide.min.js"></script>
 <script>
@@ -80,10 +112,12 @@ const CATEGORIAS = {
   clinica: { nome: 'Clínica', cor: '#2F6FB0', icone: 'stethoscope' }
 };
 
-// Locais são guardados neste navegador (localStorage). Cada navegador recebe um identificador,
-// e só ele pode excluir os cadastros que criou.
-const CHAVE_LOCAIS = 'pointpet.locais.v1';
-const CHAVE_DONO = 'pointpet.meuId';
+// Dados e contas ficam no Supabase. Preencha com os dados do seu projeto (Project Settings > API).
+// A chave "anon" é pública por natureza: a segurança vem das regras (RLS) do banco.
+const SUPABASE_URL = 'https://clmdtfxjvcxjwapzvaoq.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_tfGX6-FVpBqki-GSbbpS9g_Qz65_N54';
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
 const RAIO_TERRA = 6371000;
 
 const $ = s => document.querySelector(s);
@@ -93,25 +127,20 @@ const marcacaoTexto = $('#marcacao-texto'), salvarBtn = $('#salvar');
 
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-function lerLocais() {
-  try { return JSON.parse(localStorage.getItem(CHAVE_LOCAIS)) || []; } catch (e) { return []; }
-}
-function gravarLocais() {
-  try { localStorage.setItem(CHAVE_LOCAIS, JSON.stringify(usuarios)); return true; } catch (e) { return false; }
-}
-function obterMeuId() {
-  try {
-    let id = localStorage.getItem(CHAVE_DONO);
-    if (!id) {
-      id = crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2);
-      localStorage.setItem(CHAVE_DONO, id);
-    }
-    return id;
-  } catch (e) { return null; }
-}
+let meuUid = null;
+let usuarios = [];
 
-const meuId = obterMeuId();
-let usuarios = lerLocais();
+async function carregarLocais() {
+  const { data, error } = await sb.from('locations')
+    .select('id, categoria, nome, endereco, telefone, horario, lat, lng, user_id, created_at')
+    .order('nome');
+  if (error) { mostrarStatus('Não foi possível carregar os locais agora.'); return; }
+  usuarios = data.map(r => ({
+    id: r.id, cat: r.categoria, nome: r.nome, tipo: CATEGORIAS[r.categoria].nome,
+    endereco: r.endereco, telefone: r.telefone || '', horario: r.horario || 'Não informado',
+    lat: r.lat, lng: r.lng, dono: r.user_id, criadoEm: r.created_at
+  }));
+}
 const estado = { filtro: 'todos', termo: '', ativo: null, origem: null, rota: null, modo: 'lista', marcando: false, novoPonto: null };
 
 // Mapa: OpenStreetMap (tiles) e rotas pelo serviço OSRM. Ambos são públicos e não exigem chave.
@@ -206,7 +235,7 @@ function sincronizarSelecao() {
 function renderDetalhe() {
   const p = usuarios.find(x => x.id === estado.ativo);
   if (estado.modo !== 'detalhe' || !p) { detalhe.innerHTML = ''; return; }
-  const c = CATEGORIAS[p.cat], d = distancia(p), meu = meuId && p.dono === meuId;
+  const c = CATEGORIAS[p.cat], d = distancia(p), meu = !!meuUid && p.dono === meuUid;
   const telefone = p.telefone ? esc(p.telefone) : 'Não informado';
   detalhe.innerHTML = `
     <button type="button" class="voltar" id="voltar"><i data-lucide="arrow-left"></i>Voltar para a lista</button>
@@ -286,21 +315,17 @@ async function calcularRota(p) {
   if (window.lucide) lucide.createIcons();
 }
 
-function excluirLocal(id) {
+async function excluirLocal(id) {
   const p = usuarios.find(x => x.id === id);
-  if (!p || p.dono !== meuId) return;
+  if (!p || p.dono !== meuUid) return;
   if (!confirm(`Excluir o cadastro de “${p.nome}”? Essa ação não pode ser desfeita.`)) return;
-  const anteriores = usuarios;
-  usuarios = usuarios.filter(x => x.id !== id);
-  if (!gravarLocais()) {
-    usuarios = anteriores;
-    mostrarStatus('Não foi possível excluir agora. O armazenamento do navegador está bloqueado.');
-    return;
-  }
-  recriarMarcadores();
+  const { error } = await sb.from('locations').delete().eq('id', id);
+  if (error) { mostrarStatus('Não foi possível excluir agora. Tente de novo.'); return; }
   limparRota();
   estado.ativo = null;
   estado.modo = 'lista';
+  await carregarLocais();
+  recriarMarcadores();
   desenhar();
   mostrarStatus('Cadastro excluído.');
 }
@@ -353,39 +378,32 @@ $('#marcar').addEventListener('click', () => {
   atualizarFormulario();
 });
 
-form.addEventListener('submit', e => {
+form.addEventListener('submit', async e => {
   e.preventDefault();
   if (!estado.novoPonto) return;
+  if (!meuUid) { abrirConta('Entre na sua conta para salvar o cadastro.'); return; }
+  const ponto = estado.novoPonto;
   const dados = new FormData(form);
-  const cat = dados.get('tipo') || 'doacao';
-  const novo = {
-    id: 'l' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-    cat,
+  const { error } = await sb.from('locations').insert({
+    categoria: dados.get('tipo') || 'doacao',
     nome: String(dados.get('nome') || '').trim(),
-    tipo: CATEGORIAS[cat].nome,
     endereco: String(dados.get('endereco') || '').trim(),
-    telefone: String(dados.get('telefone') || '').trim(),
-    horario: String(dados.get('horario') || '').trim() || 'Não informado',
-    lat: estado.novoPonto.lat,
-    lng: estado.novoPonto.lng,
-    dono: meuId,
-    criadoEm: new Date().toISOString()
-  };
-  usuarios.push(novo);
-  if (!gravarLocais()) {
-    usuarios.pop();
-    formAviso.textContent = 'Não foi possível salvar neste navegador, porque o armazenamento está bloqueado.';
-    return;
-  }
-  recriarMarcadores();
+    telefone: String(dados.get('telefone') || '').trim() || null,
+    horario: String(dados.get('horario') || '').trim() || null,
+    lat: ponto.lat,
+    lng: ponto.lng
+  });
+  if (error) { formAviso.textContent = 'Não foi possível salvar agora. Confira os campos e tente de novo.'; return; }
   fecharCadastro();
+  await carregarLocais();
+  recriarMarcadores();
   desenhar();
-  mapa.setView([novo.lat, novo.lng], Math.max(mapa.getZoom(), 15));
-  mostrarStatus('Cadastro salvo. Você pode excluí-lo pela própria lista, neste navegador.');
+  mapa.setView([ponto.lat, ponto.lng], Math.max(mapa.getZoom(), 15));
+  mostrarStatus('Cadastro salvo. Locais novos passam por revisão antes de aparecer para todos.');
 });
 
 $('#cancelar-cadastro').addEventListener('click', fecharCadastro);
-$('#abrir-cadastro').addEventListener('click', abrirCadastro);
+$('#abrir-cadastro').addEventListener('click', () => (meuUid ? abrirCadastro() : abrirConta('Entre na sua conta para cadastrar um local.')));
 
 detalhe.addEventListener('click', e => {
   if (e.target.closest('#voltar')) { voltarLista(); return; }
@@ -434,9 +452,110 @@ function localizar() {
 
 document.querySelectorAll('.localizar').forEach(b => b.addEventListener('click', localizar));
 
-recriarMarcadores();
-ajustarMapa();
-desenhar();
+const dialogo = $('#dialogo-conta'), contaAviso = $('#conta-aviso');
+const formSenha = $('#form-senha'), formTel = $('#form-telefone');
+const campoCodigo = $('#campo-codigo'), confirmarCodigo = $('#confirmar-codigo');
+
+function abrirConta(aviso = '') {
+  contaAviso.textContent = aviso;
+  dialogo.showModal();
+  if (window.lucide) lucide.createIcons();
+}
+function fecharConta() {
+  dialogo.close();
+  contaAviso.textContent = '';
+}
+function traduzirErro(err) {
+  const m = ((err && err.message) || '').toLowerCase();
+  if (m.includes('invalid login')) return 'E-mail ou senha incorretos.';
+  if (m.includes('already registered') || m.includes('already been registered')) return 'Este e-mail já tem conta. Use Entrar.';
+  if (m.includes('password')) return 'A senha precisa ter pelo menos 8 caracteres.';
+  if (m.includes('seconds') || m.includes('rate')) return 'Muitas tentativas. Aguarde um pouco e tente de novo.';
+  return 'Não foi possível concluir agora. Confira os dados e tente de novo.';
+}
+function telefoneE164(bruto) {
+  const d = bruto.replace(/\D/g, '');
+  const completo = d.length === 10 || d.length === 11 ? '55' + d : d;
+  return /^55\d{10,11}$/.test(completo) ? '+' + completo : null;
+}
+
+async function atualizarSessao(sessao) {
+  meuUid = sessao && sessao.user ? sessao.user.id : null;
+  $('#entrar-sair span').textContent = meuUid ? 'Sair' : 'Entrar';
+  await carregarLocais();
+  recriarMarcadores();
+  desenhar();
+}
+
+$('#entrar-sair').addEventListener('click', async () => {
+  if (meuUid) {
+    await sb.auth.signOut();
+    mostrarStatus('Você saiu da conta.');
+  } else {
+    abrirConta();
+  }
+});
+$('#fechar-conta').addEventListener('click', fecharConta);
+
+formSenha.addEventListener('submit', async e => {
+  e.preventDefault();
+  const d = new FormData(formSenha);
+  contaAviso.textContent = 'Entrando…';
+  const { error } = await sb.auth.signInWithPassword({ email: d.get('email'), password: d.get('senha') });
+  if (error) contaAviso.textContent = traduzirErro(error);
+  else fecharConta();
+});
+
+formSenha.querySelector('[data-acao="criar"]').addEventListener('click', async () => {
+  if (!formSenha.reportValidity()) return;
+  const d = new FormData(formSenha);
+  contaAviso.textContent = 'Criando conta…';
+  const { data, error } = await sb.auth.signUp({
+    email: d.get('email'),
+    password: d.get('senha'),
+    options: { data: { name: String(d.get('nome') || '').trim() } }
+  });
+  if (error) contaAviso.textContent = traduzirErro(error);
+  else if (data.session) fecharConta();
+  else contaAviso.textContent = 'Conta criada. Confirme o e-mail que enviamos e depois entre.';
+});
+
+$('#entrar-google').addEventListener('click', async () => {
+  const { error } = await sb.auth.signInWithOAuth({
+    provider: 'google',
+    options: { redirectTo: location.href.split('#')[0] }
+  });
+  if (error) contaAviso.textContent = traduzirErro(error);
+});
+
+$('#enviar-codigo').addEventListener('click', async () => {
+  const tel = telefoneE164(formTel.telefone.value);
+  if (!tel) { contaAviso.textContent = 'Telefone inválido. Informe DDD e número.'; return; }
+  contaAviso.textContent = 'Enviando código…';
+  const { error } = await sb.auth.signInWithOtp({ phone: tel });
+  if (error) { contaAviso.textContent = traduzirErro(error); return; }
+  campoCodigo.hidden = false;
+  confirmarCodigo.hidden = false;
+  contaAviso.textContent = 'Código enviado por SMS.';
+  formTel.codigo.focus();
+});
+
+formTel.addEventListener('submit', async e => {
+  e.preventDefault();
+  const tel = telefoneE164(formTel.telefone.value) || '';
+  const { error } = await sb.auth.verifyOtp({ phone: tel, token: formTel.codigo.value.trim(), type: 'sms' });
+  if (error) { contaAviso.textContent = 'Código inválido ou expirado.'; return; }
+  fecharConta();
+});
+
+sb.auth.onAuthStateChange((evento, sessao) => {
+  if (evento !== 'INITIAL_SESSION') atualizarSessao(sessao);
+});
+(async () => {
+  const { data } = await sb.auth.getSession();
+  await atualizarSessao(data.session);
+  ajustarMapa();
+})();
 if (window.lucide) lucide.createIcons();
 </script>
 </body>
