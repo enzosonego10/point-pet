@@ -141,7 +141,7 @@ async function carregarLocais() {
     lat: r.lat, lng: r.lng, dono: r.user_id, criadoEm: r.created_at
   }));
 }
-const estado = { filtro: 'todos', termo: '', ativo: null, origem: null, rota: null, modo: 'lista', marcando: false, novoPonto: null };
+const estado = { filtro: 'todos', termo: '', ativo: null, origem: null, rota: null, modo: 'lista', marcando: false, novoPonto: null, localizando: false };
 
 // Mapa: OpenStreetMap (tiles) e rotas pelo serviço OSRM. Ambos são públicos e não exigem chave.
 const mapa = L.map('mapa').setView([-14.2, -51.9], 4);
@@ -426,28 +426,73 @@ busca.addEventListener('input', () => { estado.termo = busca.value; desenhar(); 
 
 function mostrarStatus(texto) { statusEl.textContent = texto; }
 
+let localizacaoWatchId = null;
+let localizacaoTimer = null;
+let melhorPrecisao = Infinity;
+
+function pararBuscaLocalizacao() {
+  if (localizacaoWatchId !== null) navigator.geolocation.clearWatch(localizacaoWatchId);
+  if (localizacaoTimer !== null) clearTimeout(localizacaoTimer);
+  localizacaoWatchId = null;
+  localizacaoTimer = null;
+  estado.localizando = false;
+}
+
+function aplicarLocalizacao(pos, refinando = false) {
+  const { latitude: lat, longitude: lng, accuracy } = pos.coords;
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) || !Number.isFinite(accuracy)) return;
+  if (accuracy >= melhorPrecisao) return;
+  melhorPrecisao = accuracy;
+  estado.origem = { lat, lng };
+  if (marcadorEu) marcadorEu.setLatLng([lat, lng]);
+  else marcadorEu = L.circleMarker([lat, lng], { radius: 8, color: '#fff', weight: 3, fillColor: '#1E6FD9', fillOpacity: 1 }).addTo(mapa);
+  const zoom = accuracy <= 35 ? 17 : accuracy <= 100 ? 16 : 15;
+  mapa.setView([lat, lng], zoom, { animate: true });
+  const precisao = Math.max(1, Math.round(accuracy));
+  mostrarStatus(refinando && accuracy > 35
+    ? `Localização encontrada; refinando a precisão (cerca de ${precisao} m).`
+    : `Localização exata encontrada, com precisão de cerca de ${precisao} m.`);
+  desenhar();
+}
+
 function localizar() {
   if (!navigator.geolocation) {
     mostrarStatus('Seu navegador não oferece localização. Os locais estão sem distância.');
     return;
   }
-  mostrarStatus('Procurando sua localização…');
-  navigator.geolocation.getCurrentPosition(pos => {
-    const { latitude: lat, longitude: lng, accuracy } = pos.coords;
-    estado.origem = { lat, lng };
-    if (marcadorEu) marcadorEu.remove();
-    marcadorEu = L.circleMarker([lat, lng], { radius: 8, color: '#fff', weight: 3, fillColor: '#1E6FD9', fillOpacity: 1 }).addTo(mapa);
-    mapa.setView([lat, lng], 14);
-    mostrarStatus(`Localização encontrada, com precisão de cerca de ${Math.round(accuracy)} m.`);
-    desenhar();
+  pararBuscaLocalizacao();
+  estado.localizando = true;
+  estado.origem = null;
+  melhorPrecisao = Infinity;
+  if (marcadorEu) { marcadorEu.remove(); marcadorEu = null; }
+  mostrarStatus('Obtendo sua localização…');
+
+  localizacaoWatchId = navigator.geolocation.watchPosition(pos => {
+    aplicarLocalizacao(pos, true);
+    if (pos.coords.accuracy <= 35) pararBuscaLocalizacao();
   }, err => {
-    const mensagens = {
-      1: 'Permissão negada. Libere o acesso à localização nas configurações do navegador.',
-      2: 'Não foi possível determinar sua posição agora.',
-      3: 'A busca pela localização demorou demais. Tente de novo.'
-    };
-    mostrarStatus(mensagens[err.code] || 'Não foi possível obter sua localização.');
-  }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 });
+    if (err.code === 1) {
+      pararBuscaLocalizacao();
+      mostrarStatus('Permissão negada. Libere o acesso à localização nas configurações do navegador.');
+    } else if (!estado.origem) {
+      mostrarStatus('Ainda procurando sua localização precisa…');
+    }
+  }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
+
+  // Exibe uma posição inicial rapidamente enquanto o GPS de alta precisão estabiliza.
+  navigator.geolocation.getCurrentPosition(pos => {
+    aplicarLocalizacao(pos, true);
+  }, err => {
+    if (err.code === 1) pararBuscaLocalizacao();
+  }, { enableHighAccuracy: false, timeout: 4000, maximumAge: 30000 });
+
+  localizacaoTimer = setTimeout(() => {
+    if (estado.origem) pararBuscaLocalizacao();
+    else {
+      pararBuscaLocalizacao();
+      mostrarStatus('Não foi possível determinar sua posição agora. Tente de novo.');
+    }
+  }, 15000);
 }
 
 document.querySelectorAll('.localizar').forEach(b => b.addEventListener('click', localizar));
@@ -470,8 +515,31 @@ function traduzirErro(err) {
   if (m.includes('invalid login')) return 'E-mail ou senha incorretos.';
   if (m.includes('already registered') || m.includes('already been registered')) return 'Este e-mail já tem conta. Use Entrar.';
   if (m.includes('password')) return 'A senha precisa ter pelo menos 8 caracteres.';
-  if (m.includes('seconds') || m.includes('rate')) return 'Muitas tentativas. Aguarde um pouco e tente de novo.';
+  if (m.includes('redirect') || m.includes('redirect_uri')) return 'O endereço de retorno não está autorizado no Supabase. Adicione o domínio atual em Authentication > URL Configuration.';
+  if (m.includes('seconds') || m.includes('rate') || m.includes('too many') || m.includes('email rate')) return 'O provedor limitou novos envios por alguns instantes. Aguarde e tente novamente.';
+  if (m.includes('provider') || m.includes('oauth')) return 'O login do Google ainda não está habilitado corretamente no Supabase.';
+  if (m.includes('phone') || m.includes('sms') || m.includes('twilio')) return 'O login por SMS não está habilitado ou o provedor de SMS não está configurado no Supabase.';
   return 'Não foi possível concluir agora. Confira os dados e tente de novo.';
+}
+
+function urlDeRetornoAuth() {
+  return `${location.origin}${location.pathname}`;
+}
+
+let criacaoEmAndamento = false;
+const CHAVE_ULTIMA_CRIACAO = 'pointpet.ultimaCriacaoConta';
+const CHAVE_ULTIMO_SMS = 'pointpet.ultimoSms';
+const lerTimestamp = chave => { try { return Number(sessionStorage.getItem(chave)) || 0; } catch { return 0; } };
+const salvarTimestamp = (chave, valor) => { try { sessionStorage.setItem(chave, String(valor)); } catch {} };
+let proximaTentativaCriacao = lerTimestamp(CHAVE_ULTIMA_CRIACAO);
+let smsEmAndamento = false;
+let smsEnviadoEm = lerTimestamp(CHAVE_ULTIMO_SMS);
+const botaoCriar = formSenha.querySelector('[data-acao="criar"]');
+const botaoEntrar = formSenha.querySelector('button[type="submit"]');
+
+function bloquearFormularioConta(bloqueado) {
+  botaoCriar.disabled = bloqueado;
+  botaoEntrar.disabled = bloqueado;
 }
 function telefoneE164(bruto) {
   const d = bruto.replace(/\D/g, '');
@@ -506,43 +574,95 @@ formSenha.addEventListener('submit', async e => {
   else fecharConta();
 });
 
-formSenha.querySelector('[data-acao="criar"]').addEventListener('click', async () => {
+botaoCriar.addEventListener('click', async () => {
+  const restante = proximaTentativaCriacao - Date.now();
+  if (criacaoEmAndamento) return;
+  if (restante > 0) {
+    contaAviso.textContent = `Aguarde ${Math.ceil(restante / 1000)} segundos antes de tentar criar outra conta.`;
+    return;
+  }
   if (!formSenha.reportValidity()) return;
   const d = new FormData(formSenha);
+  criacaoEmAndamento = true;
+  bloquearFormularioConta(true);
   contaAviso.textContent = 'Criando conta…';
-  const { data, error } = await sb.auth.signUp({
-    email: d.get('email'),
-    password: d.get('senha'),
-    options: { data: { name: String(d.get('nome') || '').trim() } }
-  });
-  if (error) contaAviso.textContent = traduzirErro(error);
-  else if (data.session) fecharConta();
-  else contaAviso.textContent = 'Conta criada. Confirme o e-mail que enviamos e depois entre.';
+  try {
+    const { data, error } = await sb.auth.signUp({
+      email: d.get('email'),
+      password: d.get('senha'),
+      options: {
+        emailRedirectTo: urlDeRetornoAuth(),
+        data: { name: String(d.get('nome') || '').trim() }
+      }
+    });
+    if (error) {
+      const mensagem = (error.message || '').toLowerCase();
+      if (mensagem.includes('rate') || mensagem.includes('too many') || mensagem.includes('email rate')) {
+        proximaTentativaCriacao = Date.now() + 60000;
+        salvarTimestamp(CHAVE_ULTIMA_CRIACAO, proximaTentativaCriacao);
+      }
+      contaAviso.textContent = traduzirErro(error);
+    } else if (data.session) fecharConta();
+    else {
+      proximaTentativaCriacao = Date.now() + 60000;
+      salvarTimestamp(CHAVE_ULTIMA_CRIACAO, proximaTentativaCriacao);
+      contaAviso.textContent = 'Conta criada. Confirme o e-mail que enviamos e aguarde um minuto antes de tentar novamente.';
+    }
+  } finally {
+    criacaoEmAndamento = false;
+    bloquearFormularioConta(false);
+  }
 });
 
 $('#entrar-google').addEventListener('click', async () => {
   const { error } = await sb.auth.signInWithOAuth({
     provider: 'google',
-    options: { redirectTo: location.href.split('#')[0] }
+    options: { redirectTo: urlDeRetornoAuth() }
   });
   if (error) contaAviso.textContent = traduzirErro(error);
 });
 
 $('#enviar-codigo').addEventListener('click', async () => {
+  if (smsEmAndamento) return;
+  const restante = smsEnviadoEm + 60000 - Date.now();
+  if (restante > 0) {
+    contaAviso.textContent = `Aguarde ${Math.ceil(restante / 1000)} segundos antes de pedir outro código.`;
+    return;
+  }
   const tel = telefoneE164(formTel.telefone.value);
   if (!tel) { contaAviso.textContent = 'Telefone inválido. Informe DDD e número.'; return; }
+  smsEmAndamento = true;
+  $('#enviar-codigo').disabled = true;
   contaAviso.textContent = 'Enviando código…';
-  const { error } = await sb.auth.signInWithOtp({ phone: tel });
-  if (error) { contaAviso.textContent = traduzirErro(error); return; }
-  campoCodigo.hidden = false;
-  confirmarCodigo.hidden = false;
-  contaAviso.textContent = 'Código enviado por SMS.';
-  formTel.codigo.focus();
+  try {
+    const { error } = await sb.auth.signInWithOtp({ phone: tel, options: { shouldCreateUser: true } });
+    if (error) {
+      if (/rate|too many|seconds/i.test(error.message || '')) {
+        smsEnviadoEm = Date.now();
+        salvarTimestamp(CHAVE_ULTIMO_SMS, smsEnviadoEm);
+      }
+      contaAviso.textContent = traduzirErro(error);
+      return;
+    }
+    smsEnviadoEm = Date.now();
+    salvarTimestamp(CHAVE_ULTIMO_SMS, smsEnviadoEm);
+    campoCodigo.hidden = false;
+    confirmarCodigo.hidden = false;
+    contaAviso.textContent = 'Código enviado por SMS. Aguarde um minuto antes de pedir outro.';
+    formTel.codigo.focus();
+  } finally {
+    smsEmAndamento = false;
+    $('#enviar-codigo').disabled = false;
+  }
 });
 
 formTel.addEventListener('submit', async e => {
   e.preventDefault();
   const tel = telefoneE164(formTel.telefone.value) || '';
+  if (!tel || !/^\d{6}$/.test(formTel.codigo.value.trim())) {
+    contaAviso.textContent = 'Informe o código de 6 dígitos recebido por SMS.';
+    return;
+  }
   const { error } = await sb.auth.verifyOtp({ phone: tel, token: formTel.codigo.value.trim(), type: 'sms' });
   if (error) { contaAviso.textContent = 'Código inválido ou expirado.'; return; }
   fecharConta();
@@ -551,12 +671,23 @@ formTel.addEventListener('submit', async e => {
 sb.auth.onAuthStateChange((evento, sessao) => {
   if (evento !== 'INITIAL_SESSION') atualizarSessao(sessao);
 });
+
+function mostrarErroOAuthDaUrl() {
+  const atual = new URL(location.href);
+  const fragmento = new URLSearchParams(atual.hash.replace(/^#/, ''));
+  const erro = atual.searchParams.get('error_description') || fragmento.get('error_description');
+  if (!erro) return;
+  history.replaceState(null, '', `${atual.origin}${atual.pathname}`);
+  abrirConta(`Google: ${erro.replace(/\+/g, ' ')}`);
+}
+
 (async () => {
   const { data } = await sb.auth.getSession();
   await atualizarSessao(data.session);
   ajustarMapa();
 })();
 if (window.lucide) lucide.createIcons();
+mostrarErroOAuthDaUrl();
 </script>
 </body>
 </html>
