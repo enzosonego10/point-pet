@@ -7,7 +7,7 @@ h1,h2{font-family:"Bricolage Grotesque",Figtree,sans-serif;margin:0;line-height:
 button,input{font:inherit}
 .top{display:flex;align-items:center;padding:12px 24px;border-bottom:1px solid var(--linha);background:var(--papel)}
 .marca{display:flex;align-items:center;gap:10px;font:700 1.25rem "Bricolage Grotesque",sans-serif;color:var(--tinta);text-decoration:none}
-.marca .icone{width:34px;height:34px;border-radius:10px;background:var(--verde);color:#fff;display:grid;place-items:center}
+.marca .icone{width:34px;height:34px;border-radius:10px;display:block;object-fit:cover}
 .app{display:grid;grid-template-columns:minmax(300px,380px) 1fr;height:calc(100vh - 62px);min-height:560px}
 .painel{display:flex;flex-direction:column;gap:16px;padding:28px 24px;overflow-y:auto;border-right:1px solid var(--linha)}
 .painel h1{font-size:2rem;font-weight:700}
