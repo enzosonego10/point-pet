@@ -57,6 +57,13 @@ button,input{font:inherit}
   #mapa{order:-1;height:55vh;min-height:320px}
   .painel{border-right:0;border-top:1px solid var(--linha);overflow:visible}
 }
+@media (max-width:600px){
+  .top{gap:8px;padding:8px 10px}
+  .marca{gap:6px;font-size:1rem}
+  .marca .icone{width:28px;height:28px}
+  .top > .btn{min-height:38px;padding:6px 9px;gap:5px;font-size:12px;white-space:nowrap}
+  .top > .btn svg{width:16px;height:16px}
+}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 
 .painel[data-modo="lista"] .detalhe,.painel[data-modo="lista"] .cadastro,.painel[data-modo="detalhe"] .cadastro,.painel[data-modo="cadastro"] .detalhe{display:none}
